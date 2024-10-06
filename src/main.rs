@@ -23,6 +23,44 @@ enum Command {
     Type(String),
 }
 
+fn find_system_command_path(command_name: &str) -> Result<Option<String>, String> {
+    match env::var("PATH") {
+        Ok(value) => {
+            let directories = value.split(":");
+            for directory in directories {
+                let dir_entries =
+                    fs::read_dir(directory).expect(&format!("failed to read dir: {}", directory));
+                for dir_entry in dir_entries {
+                    let full_path =
+                        dir_entry.expect(&format!("failed to read file in dir: {}", directory));
+                    let filename = full_path.file_name().into_string().expect(&format!(
+                        "failed to read file: {}",
+                        full_path.path().display()
+                    ));
+                    if filename == command_name {
+                        match full_path.path().to_str() {
+                            Some(path) => return Ok(Some(String::from(path))),
+                            None => {
+                                return Err(format!(
+                                    "failed to get full path to system folder of {} command",
+                                    filename
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+
+            return Ok(None);
+        }
+        Err(_e) => {
+            return Err(String::from(
+                "failed to get PATH variable to find commands in system folders",
+            ));
+        }
+    }
+}
+
 fn init() -> CommandEnv {
     let mut command_env = CommandEnv(vec![]);
 
@@ -67,45 +105,24 @@ fn init() -> CommandEnv {
                 )))
             } else {
                 // try to find this command in user system folders
-                match env::var("PATH") {
-                    Ok(value) => {
-                        let directories = value.split(":");
-                        for directory in directories {
-                            let dir_entries = fs::read_dir(directory)
-                                .expect(&format!("failed to read dir: {}", directory));
-                            for dir_entry in dir_entries {
-                                let full_path = dir_entry
-                                    .expect(&format!("failed to read file in dir: {}", directory));
-                                let filename =
-                                    full_path.file_name().into_string().expect(&format!(
-                                        "failed to read file: {}",
-                                        full_path.path().display()
-                                    ));
-                                if filename == typed_command_name {
-                                    match full_path.path().to_str() {
-                                        Some(path) => {
-                                            return Ok(Command::Type(format!(
-                                                "{} is {}",
-                                                String::from(typed_command_name),
-                                                String::from(path)
-                                            )));
-                                        }
-                                        None => {
-                                            return Err(format!("failed to get full path to system folder of {} command", filename)); 
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                match find_system_command_path(typed_command_name) {
+                    Ok(Some(path)) => {
+                        return Ok(Command::Type(format!(
+                            "{} is {}",
+                            String::from(typed_command_name),
+                            String::from(path)
+                        )));
                     }
+                    Ok(None) => Ok(Command::Type(format!(
+                        "{}: not found",
+                        String::from(typed_command_name)
+                    ))),
                     Err(_e) => {
-                        return Err(String::from("failed to get PATH variable to find commands in system folders"));
+                        return Err(String::from(
+                            "failed to get PATH variable to find commands in system folders",
+                        ));
                     }
                 }
-                Ok(Command::Type(format!(
-                    "{}: not found",
-                    String::from(typed_command_name)
-                )))
             }
         }),
     );
@@ -128,7 +145,10 @@ fn handle_input(input: &str, command_env: &CommandEnv) -> Result<Command, String
             .find(|(command_name, _)| command_name == command_tokens[0])
         {
             Some(command_object) => return command_object.1(&command_tokens, command_env),
-            None => return Err(format!("{}: command not found", command_tokens[0])),
+            None => {
+                return Err(format!("{}: command not found", command_tokens[0].trim()));
+                // maybe the user try to run the program
+            }
         }
     } else {
         return Err(String::from("command not specified"));
@@ -138,7 +158,7 @@ fn handle_input(input: &str, command_env: &CommandEnv) -> Result<Command, String
 fn main() {
     let stdin = io::stdin();
     let mut input = String::new();
-    let mut command_env = init();
+    let command_env = init();
 
     loop {
         print_invite_symb();

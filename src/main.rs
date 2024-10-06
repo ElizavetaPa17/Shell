@@ -17,10 +17,13 @@ impl CommandEnv {
     }
 }
 
+const RUN_INTERNAL: &str = "__r_u_n__";
+
 enum Command {
     Exit(i32),
     Echo(String),
     Type(String),
+    Run(String)
 }
 
 fn find_system_command_path(command_name: &str) -> Result<Option<String>, String> {
@@ -127,6 +130,47 @@ fn init() -> CommandEnv {
         }),
     );
 
+    // internal command, not for using from shell
+    command_env.push(
+        String::from(RUN_INTERNAL),
+        Box::new(|command_tokens, _| {
+            let command_name = command_tokens[0].trim();
+            match find_system_command_path(command_name) {
+                Ok(Some(path)) => {
+                    let args = &command_tokens[1..];
+
+                    let result = process::Command::new(path)
+                    .args(args)
+                    .output();
+
+                    match result {
+                        Ok(output) => {
+                            if output.status.success() {
+                                return Ok(Command::Run(String::from_utf8(output.stdout).expect("failed to read from program stdout")));
+                            } else {
+                                return Ok(Command::Run(String::from_utf8(output.stderr).expect("failed to read from program stderr")));
+                            }
+                        }
+                        Err(err) => {
+                            return Err(format!(
+                                "failed to execute program: {}", err
+                            ));
+                        }
+                    }
+                }
+                Ok(None) => Ok(Command::Run(format!(
+                    "{}: not found",
+                    String::from(command_name)
+                ))),
+                Err(_e) => {
+                    return Err(String::from(
+                        "failed to get PATH variable to find commands in system folders",
+                    ));
+                }
+            } 
+        }),
+    );
+
     command_env
 }
 
@@ -146,8 +190,9 @@ fn handle_input(input: &str, command_env: &CommandEnv) -> Result<Command, String
         {
             Some(command_object) => return command_object.1(&command_tokens, command_env),
             None => {
-                return Err(format!("{}: command not found", command_tokens[0].trim()));
-                // maybe the user try to run the program
+                // try to run find command in system folder (using PATH) and run it
+                let command_run = command_env.0.iter().find(|(command_name, _)| command_name == RUN_INTERNAL).unwrap();
+                return command_run.1(&command_tokens, command_env);
             }
         }
     } else {
@@ -168,7 +213,7 @@ fn main() {
             Ok(command) => match command {
                 Command::Exit(code) => process::exit(code),
                 Command::Echo(output) => println!("{}", output.trim()),
-                Command::Type(command) => println!("{}", command),
+                Command::Type(command) | Command::Run(command) => println!("{}", command),
             },
             Err(desc) => println!("{}", desc),
         }

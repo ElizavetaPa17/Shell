@@ -24,7 +24,7 @@ enum Command {
     Echo(String),
     Type(String),
     Pwd(String),
-    Run(String)
+    Run(String),
 }
 
 fn find_system_command_path(command_name: &str) -> Result<Option<String>, String> {
@@ -133,17 +133,13 @@ fn init() -> CommandEnv {
 
     command_env.push(
         String::from("pwd"),
-        Box::new(|_, _| {
-            match env::current_dir() {
-                Ok(path_buf) => {
-                    match path_buf.to_str() {
-                        Some(path) => return Ok(Command::Pwd(String::from(path))),
-                        None => return Err(String::from("failed to get current dir name"))
-                    }
-                }
-                Err(err) => {
-                    return Err(format!("failed to get current dir name: {}", err));
-                }
+        Box::new(|_, _| match env::current_dir() {
+            Ok(path_buf) => match path_buf.to_str() {
+                Some(path) => return Ok(Command::Pwd(String::from(path))),
+                None => return Err(String::from("failed to get current dir name")),
+            },
+            Err(err) => {
+                return Err(format!("failed to get current dir name: {}", err));
             }
         }),
     );
@@ -157,22 +153,24 @@ fn init() -> CommandEnv {
                 Ok(Some(path)) => {
                     let args = &command_tokens[1..];
 
-                    let result = process::Command::new(path)
-                    .args(args)
-                    .output();
+                    let result = process::Command::new(path).args(args).output();
 
                     match result {
                         Ok(output) => {
                             if output.status.success() {
-                                return Ok(Command::Run(String::from_utf8(output.stdout).expect("failed to read from program stdout")));
+                                return Ok(Command::Run(
+                                    String::from_utf8(output.stdout)
+                                        .expect("failed to read from program stdout"),
+                                ));
                             } else {
-                                return Ok(Command::Run(String::from_utf8(output.stderr).expect("failed to read from program stderr")));
+                                return Ok(Command::Run(
+                                    String::from_utf8(output.stderr)
+                                        .expect("failed to read from program stderr"),
+                                ));
                             }
                         }
                         Err(err) => {
-                            return Err(format!(
-                                "failed to execute program: {}", err
-                            ));
+                            return Err(format!("failed to execute program: {}", err));
                         }
                     }
                 }
@@ -185,7 +183,7 @@ fn init() -> CommandEnv {
                         "failed to get PATH variable to find commands in system folders",
                     ));
                 }
-            } 
+            }
         }),
     );
 
@@ -209,7 +207,11 @@ fn handle_input(input: &str, command_env: &CommandEnv) -> Result<Command, String
             Some(command_object) => return command_object.1(&command_tokens, command_env),
             None => {
                 // try to run find command in system folder (using PATH) and run it
-                let command_run = command_env.0.iter().find(|(command_name, _)| command_name == RUN_INTERNAL).unwrap();
+                let command_run = command_env
+                    .0
+                    .iter()
+                    .find(|(command_name, _)| command_name == RUN_INTERNAL)
+                    .unwrap();
                 return command_run.1(&command_tokens, command_env);
             }
         }
@@ -231,7 +233,9 @@ fn main() {
             Ok(command) => match command {
                 Command::Exit(code) => process::exit(code),
                 Command::Echo(output) => println!("{}", output.trim()),
-                Command::Type(command) | Command::Run(command) | Command::Pwd(command) => println!("{}", command),
+                Command::Type(command) | Command::Run(command) | Command::Pwd(command) => {
+                    println!("{}", command)
+                }
             },
             Err(desc) => println!("{}", desc),
         }

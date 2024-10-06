@@ -23,6 +23,7 @@ enum Command {
     Exit(i32),
     Echo(String),
     Type(String),
+    Pwd(String),
     Run(String)
 }
 
@@ -130,7 +131,24 @@ fn init() -> CommandEnv {
         }),
     );
 
-    // internal command, not for using from shell
+    command_env.push(
+        String::from("pwd"),
+        Box::new(|_, _| {
+            match env::current_dir() {
+                Ok(path_buf) => {
+                    match path_buf.to_str() {
+                        Some(path) => return Ok(Command::Pwd(String::from(path))),
+                        None => return Err(String::from("failed to get current dir name"))
+                    }
+                }
+                Err(err) => {
+                    return Err(format!("failed to get current dir name: {}", err));
+                }
+            }
+        }),
+    );
+
+    // internal command, not for using from shell, this command must be last, see handle None branch to understand it
     command_env.push(
         String::from(RUN_INTERNAL),
         Box::new(|command_tokens, _| {
@@ -162,7 +180,7 @@ fn init() -> CommandEnv {
                     "{}: not found",
                     String::from(command_name)
                 ))),
-                Err(_e) => {
+                Err(_err) => {
                     return Err(String::from(
                         "failed to get PATH variable to find commands in system folders",
                     ));
@@ -213,7 +231,7 @@ fn main() {
             Ok(command) => match command {
                 Command::Exit(code) => process::exit(code),
                 Command::Echo(output) => println!("{}", output.trim()),
-                Command::Type(command) | Command::Run(command) => println!("{}", command),
+                Command::Type(command) | Command::Run(command) | Command::Pwd(command) => println!("{}", command),
             },
             Err(desc) => println!("{}", desc),
         }
